@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "skeltal"
+version = "0.1.0"
+description = "doot doot"
+
+authors = ["Ossi Rajuvaara <ossi@rajuvaara.com>"]
+repository = "https://github.com/osrjv/skeltal"
+license = "Apache-2.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+construct = "^2.10.56"
+
+[tool.poetry.dev-dependencies]
+black = { version = "*", allow-prereleases = true }
+pytest = "^6.1.2"
+flake8 = "^3.8.4"
+pylint = "^2.6.0"
+mypy = "^0.790"
+
+[tool.poetry.scripts]
+skel = "skeltal.cli:run"
+
+[tool.black]
+target-version = ["py38"]
+
+[build-system]
+requires = ["poetry>=1.1.4"]
+build-backend = "poetry.masonry.api"
