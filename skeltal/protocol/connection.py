@@ -1,4 +1,3 @@
-import enum
 import logging
 import select
 import socket
@@ -6,35 +5,11 @@ import threading
 from construct import StreamError
 
 from skeltal.protocol import clientbound, serverbound
-from skeltal.protocol.message import UncompressedMessage, CompressedMessage
+from skeltal.protocol.handlers import HANDLERS
 from skeltal.protocol.queue import SelectQueue
+from skeltal.protocol.state import State
 
 LOGGER = logging.getLogger(__name__)
-
-
-class State(enum.IntEnum):
-    HANDSHAKING = 0x00
-    STATUS = 0x01
-    LOGIN = 0x02
-    PLAY = 0x03
-
-
-def login(conn):
-    handshake = {
-        "type": "Handshake",
-        "protocol_version": 404,
-        "server_address": conn.address,
-        "server_port": conn.port,
-        "next_state": State.LOGIN,
-    }
-    conn.dispatch(handshake)
-    conn.state(State.LOGIN)
-    login = {
-        "type": "LoginStart",
-        "name": "testuser",
-    }
-    conn.dispatch(login)
-    yield
 
 
 class ClientConnection:
@@ -46,8 +21,9 @@ class ClientConnection:
         self.registry = registry
 
         self._thread = threading.Thread(target=self._connection_loop)
-        self._state = State.HANDSHAKING
-        self._compression = False
+        self._state = None
+        self._handler = None
+        self._compression = -1
         self._stop = False
 
         self._queue = SelectQueue()
@@ -58,10 +34,29 @@ class ClientConnection:
     def is_connected(self):
         return self._thread.is_alive()
 
+    @property
+    def compression(self):
+        return self._compression
+
+    @compression.setter
+    def compression(self, value):
+        self._compression = value
+        LOGGER.debug(
+            "%s compression (threshold: %s)",
+            "Enabling" if value >= 0 else "Disabling",
+            value,
+        )
+
     def state(self, value):
         assert value in State, f"Invalid state: {value}"
-        LOGGER.info("Client state '%s' -> '%s'", self._state, value)
+        if self._state is not None:
+            LOGGER.debug("Client state '%s' -> '%s'", self._state, value)
+        else:
+            LOGGER.debug("Client state '%s'", value)
+
         self._state = value
+        self._handler = HANDLERS[value](self)
+        self._handler.send(None)  # Prime generator
 
     def start(self):
         assert not self.is_connected, "Client already connected"
@@ -73,14 +68,26 @@ class ClientConnection:
         self._stream = self._socket.makefile(mode="b")
         self._thread.start()
 
+        self.state(State.HANDSHAKING)
+
     def stop(self):
-        try:
+        if not self._stop:
             self._stop = True
             self._queue.put(self.SENTINEL)
-            self._thread.join(timeout=10)
+
+    def shutdown(self):
+        LOGGER.info("Closing connection")
+
+        try:
+            self.stop()
+            if self._thread.is_alive():
+                self._thread.join(timeout=10)
+
         finally:
-            self._stream.close()
-            self._socket.close()
+            if self._stream:
+                self._stream.close()
+            if self._socket:
+                self._socket.close()
             self._queue.close()
 
     def dispatch(self, message):
@@ -94,15 +101,13 @@ class ClientConnection:
             State.PLAY: serverbound.Play,
         }[self._state]
 
-        message_type = message.pop("type")
-        builder = getattr(serverbound, str(message_type))
+        LOGGER.trace("TX: %s", message._type)
 
-        LOGGER.debug("TX: %s", message_type)
-
-        packet_id = types[message_type]
+        packet_id = message._type.value
+        builder = getattr(serverbound, message._type.name)
         data = builder.build(message)
 
-        self._queue.put({"packet_id": packet_id, "data": data})
+        self._queue.put((packet_id, data))
 
     def receive(self, packet_id, data):
         types = {
@@ -113,16 +118,15 @@ class ClientConnection:
         }[self._state]
 
         message_type = types(packet_id)
-        LOGGER.debug("RX: %s", message_type)
+        LOGGER.trace("RX: %s", message_type)
 
-        if str(message_type) == "Login.SetCompression":
-            self._compression = True
-        if str(message_type) == "Login.LoginSuccess":
-            self.state(State.PLAY)
+        parser = getattr(clientbound, message_type.name)
+        message = parser.parse(data)
+        message._type = message_type
+
+        self._handler.send(message)
 
     def _connection_loop(self):
-
-
         while True:
             rlist, _, _ = select.select([self._socket, self._queue], [], [])
             if self._stop:
@@ -138,20 +142,16 @@ class ClientConnection:
 
     def _recv(self):
         try:
-            if self._compression:
-                msg = CompressedMessage.parse_stream(self._stream)
-                self.receive(msg.compressed.packet_id, msg.compressed.data)
-            else:
-                msg = UncompressedMessage.parse_stream(self._stream)
-                self.receive(msg.packet_id, msg.data)
+            packet_id, data = clientbound.parse_stream(self._compression, self._stream)
+            self.receive(packet_id, data)
         except StreamError as err:
-            LOGGER.error("Failed to incoming parse message: %s", err)
+            LOGGER.error("Failed to parse incoming message: %s", err)
             self._stop = True
 
     def _send(self):
-        msg = self._queue.get()
+        packet_id, data = self._queue.get()
         try:
-            packet = UncompressedMessage.build(msg)
+            packet = serverbound.build(self._compression, packet_id, data)
             self._socket.sendall(packet)
         finally:
             self._queue.task_done()

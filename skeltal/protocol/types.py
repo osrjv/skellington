@@ -1,6 +1,13 @@
 from itertools import count
 from construct.core import stream_read, stream_write, singleton
+from construct.core import Compressed as _Compressed
 from construct import Construct, PascalString, int2byte, byte2int
+
+
+class Compressed(_Compressed):
+    def _sizeof(self, context, path):
+        print(list(context.items()))
+        return 1
 
 
 @singleton
@@ -11,7 +18,7 @@ class VarInt(Construct):
     MAX_SIZE = 5
 
     @classmethod
-    def bytesize(cls, value):
+    def size(cls, value):
         """Calculate bytesize of integer as VarInt."""
         if value == 0:
             return 1
@@ -65,6 +72,10 @@ class VarInt(Construct):
                 raise ValueError("VarInt larger than expected")
 
         return obj
+
+    def _sizeof(self, context, path):
+        print(context, path)
+        return 20
 
 
 VarString = PascalString(VarInt, "utf8")

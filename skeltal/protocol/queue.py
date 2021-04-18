@@ -9,6 +9,7 @@ class SelectQueue(queue.Queue):
         if os.name == "posix":
             self._put_socket, self._get_socket = socket.socketpair()
         else:
+            # Emulate socketpair() syscall on Windows
             server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server.bind(("127.0.0.1", 0))
             server.listen(1)

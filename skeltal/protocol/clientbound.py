@@ -1,6 +1,35 @@
 from enum import IntEnum
-from construct import Struct, Bytes
-from skeltal.protocol.types import VarInt
+from construct import (
+    Int8sb,
+    Int8ub,
+    Int16sb,
+    Int16ub,
+    Int32sb,
+    Int64sb,
+    Float32b,
+    Float64b,
+    Flag,
+    Enum,
+    Bytes,
+    Compressed,
+    FixedSized,
+    GreedyBytes,
+    IfThenElse,
+    Rebuild,
+    Struct,
+    this,
+    len_,
+)
+from skeltal.protocol.types import VarInt, VarString
+
+
+def parse_stream(threshold, stream):
+    if threshold >= 0:
+        message = CompressedMessage.parse_stream(stream)
+        return message.payload.packet_id, message.payload.data
+    else:
+        message = UncompressedMessage.parse_stream(stream)
+        return message.packet_id, message.data
 
 
 class Handshaking(IntEnum):
@@ -113,3 +142,237 @@ class Play(IntEnum):
     EntityEffect = 0x53
     DeclareRecipes = 0x54
     Tags = 0x55
+
+
+# Containers
+
+UncompressedMessage = Struct(
+    "length" / Rebuild(VarInt, VarInt.size(this.packet_id) + len_(this.data)),
+    "packet_id" / VarInt,
+    "data" / Bytes(this.length - VarInt.size(this.packet_id)),
+)
+
+CompressedMessage = Struct(
+    "packet_length"
+    / Rebuild(VarInt, VarInt.size(this.data_length) + len_(this.payload)),
+    "data_length" / VarInt,
+    "payload"
+    / FixedSized(
+        lambda this: this.packet_length - VarInt.size(this.data_length),
+        IfThenElse(
+            this.data_length > 0,
+            Compressed(Struct("packet_id" / VarInt, "data" / GreedyBytes), "zlib"),
+            Struct("packet_id" / VarInt, "data" / GreedyBytes),
+        ),
+    ),
+)
+
+# Status
+
+Response = Struct("response" / VarString)
+
+Pong = Struct("payload" / Int64sb)
+
+
+# Login
+
+Disconnect = Struct("reason" / VarString)
+
+EncryptionRequest = Struct(
+    "server_id" / VarString,
+    "public_key_length" / VarInt,
+    "public_key" / Bytes(this.public_key_length),
+    "verify_token_length" / VarInt,
+    "verify_token" / Bytes(this.verify_token_length),
+)
+
+LoginSuccess = Struct("uuid" / VarString, "username" / VarString)
+
+SetCompression = Struct("threshold" / VarInt)
+
+LoginPluginRequest = Struct(
+    "message_id" / VarInt, "channel" / VarString, "data" / GreedyBytes
+)
+
+
+# Play
+
+SpawnObject = Struct()
+
+SpawnExperienceOrb = Struct()
+
+SpawnGlobalEntity = Struct()
+
+SpawnMob = Struct()
+
+SpawnPainting = Struct()
+
+SpawnPlayer = Struct()
+
+Animation = Struct()
+
+Statistics = Struct()
+
+BlockBreakAnimation = Struct()
+
+UpdateBlockEntity = Struct()
+
+BlockAction = Struct()
+
+BlockChange = Struct()
+
+BossBar = Struct()
+
+ServerDifficulty = Struct()
+
+ChatMessage = Struct()
+
+MultiBlockChange = Struct()
+
+TabComplete = Struct()
+
+DeclareCommands = Struct()
+
+ConfirmTransaction = Struct()
+
+CloseWindow = Struct()
+
+OpenWindow = Struct()
+
+WindowItems = Struct()
+
+WindowProperty = Struct()
+
+SetSlot = Struct()
+
+SetCooldown = Struct()
+
+PluginMessage = Struct()
+
+NamedSoundEffect = Struct()
+
+Disconnect = Struct("reason" / VarString)
+
+EntityStatus = Struct()
+
+NBTQueryResponse = Struct()
+
+Explosion = Struct()
+
+UnloadChunk = Struct()
+
+ChangeGameState = Struct()
+
+KeepAlive = Struct("id" / Int64sb)
+
+ChunkData = Struct()
+
+Effect = Struct()
+
+Particle = Struct()
+
+JoinGame = Struct(
+    "entity_id" / Int32sb,
+    "game_mode" / Enum(Int8ub, Survival=0, Creative=1, Adventure=2, Spectator=3),
+    "dimension" / Enum(Int32sb, Nether=-1, Overworld=0, End=1),
+    "difficulty" / Enum(Int8ub, Peaceful=0, Easy=1, Normal=2, Hard=3),
+    "max_players" / Int8ub,
+    "level_type" / VarString,
+    "reduced_debug_info" / Flag,
+)
+
+MapData = Struct()
+
+Entity = Struct()
+
+EntityRelativeMove = Struct()
+
+EntityLookAndRelativeMove = Struct()
+
+EntityLook = Struct()
+
+VehicleMove = Struct()
+
+OpenSignEditor = Struct()
+
+CraftRecipeResponse = Struct()
+
+PlayerAbilities = Struct()
+
+CombatEvent = Struct()
+
+PlayerInfo = Struct()
+
+FacePlayer = Struct()
+
+PlayerPositionAndLook = Struct()
+
+UseBed = Struct()
+
+UnlockRecipes = Struct()
+
+DestroyEntities = Struct()
+
+RemoveEntityEffect = Struct()
+
+ResourcePackSend = Struct()
+
+Respawn = Struct()
+
+EntityHeadLook = Struct()
+
+SelectAdvancementTab = Struct()
+
+WorldBorder = Struct()
+
+Camera = Struct()
+
+HeldItemChange = Struct()
+
+DisplayScoreboard = Struct()
+
+EntityMetadata = Struct()
+
+AttachEntity = Struct()
+
+EntityVelocity = Struct()
+
+EntityEquipment = Struct()
+
+SetExperience = Struct()
+
+UpdateHealth = Struct()
+
+ScoreboardObjective = Struct()
+
+SetPassengers = Struct()
+
+Teams = Struct()
+
+UpdateScore = Struct()
+
+SpawnPosition = Struct()
+
+TimeUpdate = Struct()
+
+Title = Struct()
+
+StopSound = Struct()
+
+SoundEffect = Struct()
+
+PlayerListHeaderAndFooter = Struct()
+
+CollectItem = Struct()
+
+EntityTeleport = Struct()
+
+Advancements = Struct()
+
+EntityProperties = Struct()
+
+EntityEffect = Struct()
+
+DeclareRecipes = Struct()
+
+Tags = Struct()

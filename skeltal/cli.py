@@ -1,8 +1,7 @@
 import argparse
 import logging
+import re
 from skeltal.bot import Bot
-
-LOGGER = logging.getLogger(__name__)
 
 LOGO = """
    .x+=:.         ..                       ..      s                      ..
@@ -19,25 +18,49 @@ x88:  `)8b.   888E`"88*"  :888'8888.   888R     8888    .@88 "8888"   888R
                ""    ""      "YP'       "%               ^Y"   ^Y'     "%
 """
 
+LOGGER = logging.getLogger(__name__)
+LEVELS = [logging.INFO, logging.DEBUG, logging.TRACE]
+ADDRESS = "localhost:25565"
+
+
+def address_type(value):
+    pattern = re.compile(
+        r"""
+        (\[[:a-fA-F0-9]+\]|      # IPv6
+        (?:\d{1,3}\.){3}\d{1,3}| # IPv4
+        [-a-zA-Z0-9.]+)          # Hostname
+        (?::(\d+))?              # Port
+        """,
+        re.X,
+    )
+    try:
+        addr, port = pattern.match(value).group(1, 2)
+        return (addr, int(port))
+    except Exception as exc:
+        raise argparse.ArgumentTypeError(
+            "Address should be valid hostname:port pair"
+        ) from exc
+
 
 def run():
     parser = argparse.ArgumentParser("skeltal")
-    _ = parser.parse_args()
+    parser.add_argument("address", nargs="?", type=address_type, default=ADDRESS)
+    parser.add_argument("-v", "--verbose", action="count", default=0)
+    args = parser.parse_args()
 
+    level = LEVELS[min(args.verbose, len(LEVELS) - 1)]
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=level,
         format="%(asctime)s.%(msecs)03d » %(levelname)s » %(message)s",
         datefmt="%H:%M:%S",
     )
 
-    bot = Bot("localhost", 25565)
+    bot = Bot(address=args.address[0], port=args.address[1])
 
     try:
         print(LOGO, flush=True)
         bot.run_forever()
     except KeyboardInterrupt:
         logging.warning("User interrupt")
-        bot.shutdown()
-    except Exception as exc:
-        print(exc)
+    finally:
         bot.shutdown()
