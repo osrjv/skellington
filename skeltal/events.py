@@ -4,7 +4,7 @@ from skeltal.protocol import clientbound
 LOGGER = logging.getLogger(__name__)
 
 
-class EventsRegistry:
+class EventsHandler:
     def __init__(self):
         self._seen = set()
 

@@ -3,17 +3,14 @@ from construct import (
     Bytes,
     Const,
     Container,
-    FixedSized,
+    Compressed,
     GreedyBytes,
-    IfThenElse,
-    Long,
     Rebuild,
-    Short,
     Struct,
     this,
     len_,
 )
-from skeltal.protocol.types import VarInt, VarString, Compressed
+from skeltal.protocol.types import VarInt, VarString, Long, Short
 
 
 def build(threshold, packet_id, data):

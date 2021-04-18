@@ -1,13 +1,20 @@
 from itertools import count
 from construct.core import stream_read, stream_write, singleton
-from construct.core import Compressed as _Compressed
-from construct import Construct, PascalString, int2byte, byte2int
-
-
-class Compressed(_Compressed):
-    def _sizeof(self, context, path):
-        print(list(context.items()))
-        return 1
+from construct import (
+    Int8sb,
+    Int8ub,
+    Int16sb,
+    Int16ub,
+    Int32sb,
+    Int64sb,
+    Float32b,
+    Float64b,
+    Flag,
+    PascalString,
+    Construct,
+    int2byte,
+    byte2int,
+)
 
 
 @singleton
@@ -78,4 +85,18 @@ class VarInt(Construct):
         return 20
 
 
+VarLong = VarInt
 VarString = PascalString(VarInt, "utf8")
+
+# Names used in protocol specification
+Boolean = Flag
+Byte = Int8sb
+UnsignedByte = Int8ub
+Short = Int16sb
+UnsignedShort = Int16ub
+Int = Int32sb
+Long = Int64sb
+Float = Float32b
+Double = Float64b
+Chat = VarString
+Identifier = VarString

@@ -5,9 +5,9 @@ import threading
 from construct import StreamError
 
 from skeltal.protocol import clientbound, serverbound
-from skeltal.protocol.handlers import HANDLERS
 from skeltal.protocol.queue import SelectQueue
 from skeltal.protocol.state import State
+from skeltal.protocol.handlers import HANDLERS
 
 LOGGER = logging.getLogger(__name__)
 
@@ -15,12 +15,12 @@ LOGGER = logging.getLogger(__name__)
 class ClientConnection:
     SENTINEL = object()
 
-    def __init__(self, address, port, registry):
+    def __init__(self, address, port, events):
         self.address = str(address)
         self.port = int(port)
-        self.registry = registry
+        self.events = events
 
-        self._thread = threading.Thread(target=self._connection_loop)
+        self._thread = threading.Thread(target=self._loop)
         self._state = None
         self._handler = None
         self._compression = -1
@@ -49,14 +49,16 @@ class ClientConnection:
 
     def state(self, value):
         assert value in State, f"Invalid state: {value}"
+        handler = HANDLERS[value]
+
         if self._state is not None:
-            LOGGER.debug("Client state '%s' -> '%s'", self._state, value)
+            LOGGER.debug("Client state: '%s' -> '%s'", self._state, value)
         else:
-            LOGGER.debug("Client state '%s'", value)
+            LOGGER.debug("Client state: '%s'", value)
 
         self._state = value
-        self._handler = HANDLERS[value](self)
-        self._handler.send(None)  # Prime generator
+        self._handler = handler(self, self.events)
+        self._handler.start()
 
     def start(self):
         assert not self.is_connected, "Client already connected"
@@ -68,7 +70,7 @@ class ClientConnection:
         self._stream = self._socket.makefile(mode="b")
         self._thread.start()
 
-        self.state(State.HANDSHAKING)
+        self.state(State.Handshaking)
 
     def stop(self):
         if not self._stop:
@@ -94,39 +96,9 @@ class ClientConnection:
         if not self.is_connected:
             raise RuntimeError("Client not connected")
 
-        types = {
-            State.HANDSHAKING: serverbound.Handshaking,
-            State.STATUS: serverbound.Status,
-            State.LOGIN: serverbound.Login,
-            State.PLAY: serverbound.Play,
-        }[self._state]
+        self._queue.put(message)
 
-        LOGGER.trace("TX: %s", message._type)
-
-        packet_id = message._type.value
-        builder = getattr(serverbound, message._type.name)
-        data = builder.build(message)
-
-        self._queue.put((packet_id, data))
-
-    def receive(self, packet_id, data):
-        types = {
-            State.HANDSHAKING: clientbound.Handshaking,
-            State.STATUS: clientbound.Status,
-            State.LOGIN: clientbound.Login,
-            State.PLAY: clientbound.Play,
-        }[self._state]
-
-        message_type = types(packet_id)
-        LOGGER.trace("RX: %s", message_type)
-
-        parser = getattr(clientbound, message_type.name)
-        message = parser.parse(data)
-        message._type = message_type
-
-        self._handler.send(message)
-
-    def _connection_loop(self):
+    def _loop(self):
         while True:
             rlist, _, _ = select.select([self._socket, self._queue], [], [])
             if self._stop:
@@ -143,14 +115,44 @@ class ClientConnection:
     def _recv(self):
         try:
             packet_id, data = clientbound.parse_stream(self._compression, self._stream)
-            self.receive(packet_id, data)
+
+            types = {
+                State.Handshaking: clientbound.Handshaking,
+                State.Status: clientbound.Status,
+                State.Login: clientbound.Login,
+                State.Play: clientbound.Play,
+            }[self._state]
+
+            message_type = types(packet_id)
+            LOGGER.trace("RX: %s", message_type)
+
+            parser = getattr(clientbound, message_type.name)
+            message = parser.parse(data)
+            message._type = message_type
+
+            self._handler.handle(message)
         except StreamError as err:
             LOGGER.error("Failed to parse incoming message: %s", err)
             self._stop = True
 
     def _send(self):
-        packet_id, data = self._queue.get()
         try:
+            message = self._queue.get()
+
+            types = {
+                State.Handshaking: serverbound.Handshaking,
+                State.Status: serverbound.Status,
+                State.Login: serverbound.Login,
+                State.Play: serverbound.Play,
+            }[self._state]
+
+            assert message._type in types
+            LOGGER.trace("TX: %s", message._type)
+
+            packet_id = message._type.value
+            builder = getattr(serverbound, message._type.name)
+            data = builder.build(message)
+
             packet = serverbound.build(self._compression, packet_id, data)
             self._socket.sendall(packet)
         finally:

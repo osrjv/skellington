@@ -1,14 +1,5 @@
 from enum import IntEnum
 from construct import (
-    Int8sb,
-    Int8ub,
-    Int16sb,
-    Int16ub,
-    Int32sb,
-    Int64sb,
-    Float32b,
-    Float64b,
-    Flag,
     Enum,
     Bytes,
     Compressed,
@@ -20,7 +11,21 @@ from construct import (
     this,
     len_,
 )
-from skeltal.protocol.types import VarInt, VarString
+from skeltal.protocol.types import (
+    VarInt,
+    VarString,
+    Boolean,
+    Byte,
+    UnsignedByte,
+    Short,
+    UnsignedShort,
+    Int,
+    Long,
+    Float,
+    Double,
+    Chat,
+    Identifier,
+)
 
 
 def parse_stream(threshold, stream):
@@ -144,6 +149,26 @@ class Play(IntEnum):
     Tags = 0x55
 
 
+class GameMode(IntEnum):
+    Survival = 0
+    Creative = 1
+    Adventure = 2
+    Spectator = 3
+
+
+class Dimension(IntEnum):
+    Nether = -1
+    Overworld = 0
+    End = 1
+
+
+class Difficulty(IntEnum):
+    Peaceful = 0
+    Easy = 1
+    Normal = 2
+    Hard = 3
+
+
 # Containers
 
 UncompressedMessage = Struct(
@@ -171,12 +196,12 @@ CompressedMessage = Struct(
 
 Response = Struct("response" / VarString)
 
-Pong = Struct("payload" / Int64sb)
+Pong = Struct("payload" / Long)
 
 
 # Login
 
-Disconnect = Struct("reason" / VarString)
+Disconnect = Struct("reason" / Chat)
 
 EncryptionRequest = Struct(
     "server_id" / VarString,
@@ -191,7 +216,7 @@ LoginSuccess = Struct("uuid" / VarString, "username" / VarString)
 SetCompression = Struct("threshold" / VarInt)
 
 LoginPluginRequest = Struct(
-    "message_id" / VarInt, "channel" / VarString, "data" / GreedyBytes
+    "message_id" / VarInt, "channel" / Identifier, "data" / GreedyBytes
 )
 
 
@@ -263,7 +288,7 @@ UnloadChunk = Struct()
 
 ChangeGameState = Struct()
 
-KeepAlive = Struct("id" / Int64sb)
+KeepAlive = Struct("id" / Long)
 
 ChunkData = Struct()
 
@@ -272,13 +297,13 @@ Effect = Struct()
 Particle = Struct()
 
 JoinGame = Struct(
-    "entity_id" / Int32sb,
-    "game_mode" / Enum(Int8ub, Survival=0, Creative=1, Adventure=2, Spectator=3),
-    "dimension" / Enum(Int32sb, Nether=-1, Overworld=0, End=1),
-    "difficulty" / Enum(Int8ub, Peaceful=0, Easy=1, Normal=2, Hard=3),
-    "max_players" / Int8ub,
+    "entity_id" / Int,
+    "game_mode" / Enum(UnsignedByte, GameMode),
+    "dimension" / Enum(Int, Dimension),
+    "difficulty" / Enum(UnsignedByte, Difficulty),
+    "max_players" / UnsignedByte,
     "level_type" / VarString,
-    "reduced_debug_info" / Flag,
+    "reduced_debug_info" / Boolean,
 )
 
 MapData = Struct()
